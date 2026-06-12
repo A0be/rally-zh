@@ -73,12 +73,18 @@
     return document.querySelector("canvas") || document.body;
   }
 
-  // ---------- 合成指针事件驱动球拍 ----------
-  // Rally 用拖拽手势控制球拍：按下并保持，移动时按位移量驱动。
-  // 用 pointerType:'touch' 绕过它的鼠标指针锁定，走绝对坐标/位移路径。
+  // ---------- 合成指针事件驱动球拍（相对位置控制） ----------
+  // Rally 用拖拽手势（位移量）控制球拍：按下保持，移动时按 delta 驱动。
+  // 这里用“相对控制”：以掌心的移动增量驱动一个虚拟指针，手小幅移动即可控球拍，
+  // 手离开再回来不跳变。用 pointerType:'touch' 绕过游戏的鼠标指针锁定。
   let pointerDown = false;
   let lastCX = 0, lastCY = 0;
   const PID = 991;
+  const SENS = 1.7;                 // 灵敏度：掌心移动量 → 球拍位移的放大系数
+  let vx = 0, vy = 0;               // 虚拟指针像素位置
+  let vInit = false;
+  let prevHX = null, prevHY = null; // 上一帧平滑后的掌心归一化位置（相对基准）
+  const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
   function firePointer(type, cx, cy) {
     const target = getTarget();
@@ -109,28 +115,35 @@
   function drivePaddle() {
     const W = window.innerWidth, H = window.innerHeight;
     if (hand.present) {
-      // 平滑
-      const k = 0.25;
+      // 轻平滑掌心，减少抖动
+      const k = 0.4;
       if (!hand.init) { hand.sx = hand.x; hand.sy = hand.y; hand.init = true; }
       hand.sx += (hand.x - hand.sx) * k;
       hand.sy += (hand.y - hand.sy) * k;
-      const cx = hand.sx * W;
-      const cy = hand.sy * H;
+
+      if (!vInit) { vx = W / 2; vy = H / 2; vInit = true; }        // 初次：从屏幕中心起
+      if (prevHX === null) { prevHX = hand.sx; prevHY = hand.sy; } // 重新出现：建立基准，本帧不移动
+
+      // 相对位移：掌心增量 × 灵敏度，累加到虚拟指针
+      vx = clamp(vx + (hand.sx - prevHX) * W * SENS, 0, W);
+      vy = clamp(vy + (hand.sy - prevHY) * H * SENS, 0, H);
+      prevHX = hand.sx; prevHY = hand.sy;
 
       if (!pointerDown) {
-        lastCX = cx; lastCY = cy;
-        firePointer("pointerdown", cx, cy);
+        lastCX = vx; lastCY = vy;
+        firePointer("pointerdown", vx, vy);
         pointerDown = true;
       } else {
-        firePointer("pointermove", cx, cy);
+        firePointer("pointermove", vx, vy);
       }
-      statusEl.textContent = `手掌 ✔  (${cx | 0}, ${cy | 0})`;
+      statusEl.textContent = `相对控制 ✔  (${vx | 0}, ${vy | 0})`;
     } else {
       if (pointerDown) {
         firePointer("pointerup", lastCX, lastCY);
         pointerDown = false;
       }
       hand.init = false;
+      prevHX = prevHY = null; // 重置基准，手回来不跳变
       statusEl.textContent = "未检测到手";
     }
   }
