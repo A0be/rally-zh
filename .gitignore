@@ -1,0 +1,12 @@
+# 本地化/部署过程文件
+localize-zh.cjs
+assets/*.orig
+.vercelignore
+
+# 平台目录
+.vercel
+node_modules/
+
+# 系统
+.DS_Store
+Thumbs.db
